@@ -333,14 +333,59 @@ const AdminOrders = () => {
         throw updateError;
       }
 
-      // Fetch the updated orders with courier numbers
-      await fetchOrders();
-
-      // Generate invoices for newly assigned orders
+      // Fetch the updated orders directly to get courier numbers
       const assignedOrderIds = pendingAssignments.map(a => a.order_id);
-      const assignedOrders = orders.filter(order => assignedOrderIds.includes(order.id));
+      
+      const { data: ordersData, error: ordersError } = await supabase
+        .rpc('list_all_orders', {
+          _admin_user_id: user.id
+        });
 
-      if (assignedOrders.length > 0) {
+      if (ordersError) throw ordersError;
+
+      // Get the newly assigned orders with their courier numbers
+      const assignedOrdersData = (ordersData || []).filter(order => 
+        assignedOrderIds.includes(order.id)
+      );
+
+      if (assignedOrdersData.length > 0) {
+        // Fetch order items for each assigned order
+        const assignedOrders = await Promise.all(
+          assignedOrdersData.map(async (order) => {
+            const { data: itemsData } = await supabase
+              .from('order_items')
+              .select('*')
+              .eq('order_id', order.id);
+
+            const { data: profileData } = await supabase
+              .rpc('get_profile', {
+                _user_id: order.user_id
+              });
+
+            const addressParts = order.billing_address.split(',').map(part => part.trim());
+            
+            return {
+              id: order.id,
+              customer: profileData?.name || order.billing_name || 'Unknown',
+              phone: profileData?.phone || order.billing_phone,
+              address: order.billing_address,
+              total: `$${Number(order.total_amount).toFixed(2)}`,
+              date: new Date(order.created_at).toLocaleDateString(),
+              courierNo: order.courier_no || '',
+              city: addressParts[1] || '',
+              state: addressParts[2] || '',
+              pincode: addressParts[3] || '',
+              orderItems: (itemsData || []).map(item => ({
+                id: item.id,
+                name: item.product_name,
+                quantity: item.quantity,
+                price: Number(item.product_price),
+                image: "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=400"
+              }))
+            };
+          })
+        );
+
         // Generate merged PDF for all newly assigned orders
         const doc = new jsPDF({
           orientation: 'portrait',
@@ -360,7 +405,7 @@ const AdminOrders = () => {
           doc.setFontSize(10);
           doc.text(`Order ID: ${order.id}`, 10, 25);
           doc.text(`Date: ${order.date}`, 10, 30);
-          doc.text(`Courier No: ${order.courierNo || 'N/A'}`, 10, 35);
+          doc.text(`Courier No: ${order.courierNo}`, 10, 35);
 
           // Customer Details
           doc.setFontSize(12);
