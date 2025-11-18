@@ -333,13 +333,82 @@ const AdminOrders = () => {
         throw updateError;
       }
 
-      toast({
-        title: "Success",
-        description: `${pendingAssignments.length} courier numbers assigned successfully`,
-      });
+      // Fetch the updated orders with courier numbers
+      await fetchOrders();
+
+      // Generate invoices for newly assigned orders
+      const assignedOrderIds = pendingAssignments.map(a => a.order_id);
+      const assignedOrders = orders.filter(order => assignedOrderIds.includes(order.id));
+
+      if (assignedOrders.length > 0) {
+        // Generate merged PDF for all newly assigned orders
+        const doc = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a5'
+        });
+
+        assignedOrders.forEach((order, index) => {
+          if (index > 0) {
+            doc.addPage();
+          }
+
+          // Header
+          doc.setFontSize(16);
+          doc.text('INVOICE', 105, 15, { align: 'center' });
+          
+          doc.setFontSize(10);
+          doc.text(`Order ID: ${order.id}`, 10, 25);
+          doc.text(`Date: ${order.date}`, 10, 30);
+          doc.text(`Courier No: ${order.courierNo || 'N/A'}`, 10, 35);
+
+          // Customer Details
+          doc.setFontSize(12);
+          doc.text('Customer Details:', 10, 45);
+          doc.setFontSize(10);
+          doc.text(`Name: ${order.customer}`, 10, 50);
+          doc.text(`Phone: ${order.phone}`, 10, 55);
+          doc.text(`Address: ${order.address}`, 10, 60);
+          if (order.city) doc.text(`City: ${order.city}`, 10, 65);
+          if (order.state) doc.text(`State: ${order.state}`, 10, 70);
+          if (order.pincode) doc.text(`Pincode: ${order.pincode}`, 10, 75);
+
+          // Items Table
+          autoTable(doc, {
+            startY: 85,
+            head: [['Item', 'Qty', 'Price', 'Total']],
+            body: order.orderItems.map(item => [
+              item.name,
+              item.quantity.toString(),
+              `$${item.price.toFixed(2)}`,
+              `$${(item.price * item.quantity).toFixed(2)}`
+            ]),
+            theme: 'grid',
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [0, 0, 0] }
+          });
+
+          // Total
+          const finalY = (doc as any).lastAutoTable.finalY || 85;
+          doc.setFontSize(12);
+          doc.text(`Total: ${order.total}`, 10, finalY + 10);
+        });
+
+        doc.save(`invoices-${new Date().toISOString().split('T')[0]}.pdf`);
+
+        toast({
+          title: "Success",
+          description: `${pendingAssignments.length} courier numbers assigned and invoices generated`,
+        });
+      } else {
+        toast({
+          title: "Success",
+          description: `${pendingAssignments.length} courier numbers assigned successfully`,
+        });
+      }
       
       setPendingAssignments([]);
-      fetchOrders();
+      await fetchOrders();
     } catch (error: any) {
       toast({
         title: "Error",
