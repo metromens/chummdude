@@ -206,6 +206,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_order_items: {
+        Args: { _admin_user_id: string; _order_id: string }
+        Returns: {
+          created_at: string
+          id: string
+          order_id: string
+          product_name: string
+          product_price: number
+          quantity: number
+        }[]
+      }
       get_profile: {
         Args: { _user_id: string }
         Returns: {
@@ -227,6 +238,17 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      get_user_order_items: {
+        Args: { _order_id: string; _user_id: string }
+        Returns: {
+          created_at: string
+          id: string
+          order_id: string
+          product_name: string
+          product_price: number
+          quantity: number
+        }[]
       }
       has_role: {
         Args: {

@@ -101,11 +101,12 @@ const AdminOrders = () => {
       // Fetch order items and profile data for each order
       const ordersWithItems = await Promise.all(
         (ordersData || []).map(async (order) => {
-          // Fetch order items
+          // Fetch order items using admin function
           const { data: itemsData } = await supabase
-            .from('order_items')
-            .select('*')
-            .eq('order_id', order.id);
+            .rpc('get_order_items', {
+              _admin_user_id: user.id,
+              _order_id: order.id
+            });
 
           // Fetch profile data
           const { data: profileData } = await supabase
@@ -353,9 +354,10 @@ const AdminOrders = () => {
         const assignedOrders = await Promise.all(
           assignedOrdersData.map(async (order) => {
             const { data: itemsData } = await supabase
-              .from('order_items')
-              .select('*')
-              .eq('order_id', order.id);
+              .rpc('get_order_items', {
+                _admin_user_id: user.id,
+                _order_id: order.id
+              });
 
             const { data: profileData } = await supabase
               .rpc('get_profile', {
