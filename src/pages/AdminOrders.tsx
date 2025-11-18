@@ -76,6 +76,8 @@ const AdminOrders = () => {
   const [uploading, setUploading] = useState(false);
   const [generatingInvoices, setGeneratingInvoices] = useState(false);
   const [activeTab, setActiveTab] = useState<'assigned' | 'unassigned'>('unassigned');
+  const [pendingAssignments, setPendingAssignments] = useState<Array<{ order_id: string; courier_no: string }>>([]);
+  const [applying, setApplying] = useState(false);
 
   const handleLogout = () => {
     navigate("/admin");
@@ -253,57 +255,49 @@ const AdminOrders = () => {
         complete: async (results) => {
           const data = results.data as Array<{ courier_id?: string }>;
           
-        // Extract courier numbers from CSV
-        const courierNumbers = data
-          .filter(row => row.courier_id && row.courier_id.trim())
-          .map(row => row.courier_id!.trim());
+          // Extract courier numbers from CSV
+          const courierNumbers = data
+            .filter(row => row.courier_id && row.courier_id.trim())
+            .map(row => row.courier_id!.trim());
 
-        if (courierNumbers.length === 0) {
-          toast({
-            title: "Error",
-            description: "No valid courier numbers found in CSV",
-            variant: "destructive",
-          });
-          setUploading(false);
-          return;
-        }
+          if (courierNumbers.length === 0) {
+            toast({
+              title: "Error",
+              description: "No valid courier numbers found in CSV",
+              variant: "destructive",
+            });
+            setUploading(false);
+            return;
+          }
 
-        // Filter orders that don't have courier numbers
-        const ordersWithoutCourier = orders.filter(order => !order.courierNo);
+          // Filter orders that don't have courier numbers
+          const ordersWithoutCourier = orders.filter(order => !order.courierNo);
 
-        if (ordersWithoutCourier.length === 0) {
-          toast({
-            title: "Info",
-            description: "All orders already have courier numbers assigned",
-          });
-          setUploading(false);
-          return;
-        }
+          if (ordersWithoutCourier.length === 0) {
+            toast({
+              title: "Info",
+              description: "All orders already have courier numbers assigned",
+            });
+            setUploading(false);
+            return;
+          }
 
-        // Prepare order updates for the batch function
-        const orderUpdates = ordersWithoutCourier
-          .slice(0, courierNumbers.length)
-          .map((order, index) => ({
-            order_id: order.id,
-            courier_no: courierNumbers[index]
-          }));
+          // Prepare pending assignments (don't update DB yet)
+          const orderUpdates = ordersWithoutCourier
+            .slice(0, courierNumbers.length)
+            .map((order, index) => ({
+              order_id: order.id,
+              courier_no: courierNumbers[index]
+            }));
 
-        // Call the secure batch update function
-        const { error: updateError } = await supabase.rpc('update_courier_numbers', {
-          _admin_user_id: user.id,
-          _order_updates: orderUpdates
-        });
-
-        if (updateError) {
-          throw updateError;
-        }
-
-        toast({
-          title: "Success",
-          description: `${orderUpdates.length} courier numbers assigned successfully`,
-        });
+          setPendingAssignments(orderUpdates);
           
-          fetchOrders();
+          toast({
+            title: "CSV Loaded",
+            description: `${orderUpdates.length} courier numbers ready to assign. Click "Apply Assignments" to confirm.`,
+          });
+          
+          setUploading(false);
         },
         error: (error) => {
           toast({
@@ -311,6 +305,7 @@ const AdminOrders = () => {
             description: "Failed to parse CSV file",
             variant: "destructive",
           });
+          setUploading(false);
         }
       });
     } catch (error) {
@@ -319,8 +314,40 @@ const AdminOrders = () => {
         description: "Failed to upload CSV",
         variant: "destructive",
       });
-    } finally {
       setUploading(false);
+    }
+  };
+
+  const handleApplyAssignments = async () => {
+    if (pendingAssignments.length === 0 || !user?.id) return;
+
+    setApplying(true);
+    try {
+      // Call the secure batch update function
+      const { error: updateError } = await supabase.rpc('update_courier_numbers', {
+        _admin_user_id: user.id,
+        _order_updates: pendingAssignments
+      });
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      toast({
+        title: "Success",
+        description: `${pendingAssignments.length} courier numbers assigned successfully`,
+      });
+      
+      setPendingAssignments([]);
+      fetchOrders();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to apply assignments",
+        variant: "destructive",
+      });
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -498,6 +525,15 @@ const AdminOrders = () => {
                     </span>
                   </Button>
                 </label>
+                {pendingAssignments.length > 0 && (
+                  <Button 
+                    onClick={handleApplyAssignments} 
+                    variant="default"
+                    disabled={applying}
+                  >
+                    {applying ? "Applying..." : `Apply Assignments (${pendingAssignments.length})`}
+                  </Button>
+                )}
                 <Button 
                   onClick={handleGenerateAllInvoices} 
                   variant="default"
